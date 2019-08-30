@@ -1,0 +1,16 @@
+{
+  "name": "suzutsuki",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Suzutsuki.js",
+  "scripts": {
+    "test": "node Suzutsuki.js"
+  },
+  "author": "Saya",
+  "license": "MIT",
+  "dependencies": {
+    "eris": "^0.10.1",
+    "fastify": "^2.7.1",
+    "mariadb": "^2.1.0"
+  }
+}
