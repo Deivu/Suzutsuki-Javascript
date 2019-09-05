@@ -85,7 +85,7 @@ class DonatorHandler {
 
             const member = await this.getRESTGuildMember(guild.id, request.query.id)
                 .catch((error) => error.message === 'DiscordRESTError [10013]: Unknown User' ? null : error);
-            return member ? member.roles.includes(config.stonksdonatorid) : false;
+            return member && (member.roles && Array.isArray(member.roles)) ? member.roles.includes(config.stonksdonatorid) : false;
         } catch (error) {
             console.error(error);
             reply.code(500);
