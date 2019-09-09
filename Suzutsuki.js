@@ -4,11 +4,7 @@ const crypto = require('crypto');
 const server = require('fastify')();
 const config = require('./config.js');
 
-const randomStatus = [
-    'Did you call, Admiral?',
-    'I\'ll protect you forever.',
-    'We\'ll be together forever.'
-];
+const randomStatus = ['Did you call, Admiral?', 'I\'ll protect you forever.', 'We\'ll be together forever.'];
 const exitEvents = ['beforeExit', 'SIGINT', 'SIGINT'];
 const patreonRoles = ['Contributors', 'Benefactors', 'Specials', 'Heroes'];
 
@@ -53,7 +49,6 @@ class PatreonHandler {
             const rewards = json.included.slice(2, json.included.length);
             console.log(json.data.attributes)
             console.log(rewards.find(x => x.attributes.amount_cents === json.data.attributes.amount_cents))
-            /*
             await this.pool.query(
                 'INSERT INTO patreons (id, status) VALUES (?, ?) ON DUPLICATE KEY UPDATE status = VALUE(status)',
                 [id, number]
@@ -85,12 +80,18 @@ class DonatorHandler {
 
             const member = await this.getRESTGuildMember(guild.id, request.query.id)
                 .catch((error) => error.message === 'DiscordRESTError [10013]: Unknown User' ? null : error);
-            return member && (member.roles && Array.isArray(member.roles)) ? member.roles.includes(config.stonksdonatorid) : false;
+            return member && Array.isArray(member.roles) ? member.roles.includes(config.stonksdonatorid) : false;
         } catch (error) {
             console.error(error);
             reply.code(500);
             return error.toString();
         }
+    }
+}
+
+class FasifyCallback {
+    static handle(error, address) {
+        error ? console.error(error) : console.log(`Rest server is listening at ${address}`);
     }
 }
 
@@ -156,7 +157,7 @@ class SuzutsukiEvents {
                 [member.id, roleObject.name, roleObject.name]
             ).then(() => {
                 const channel = guild.channels.get(config.annoucementchannelid);
-                channel.createMessage(`<a:too_hype:480054627820371977>**${member.nick || member.username}** became a Patreon! Hooray! Thanks for the support ~`)
+                channel.createMessage(`<a:too_hype:480054627820371977>** ${member.nick || member.username}** became a Patreon! Hooray! Thanks for the support ~`)
                     .catch(console.error);
             }).catch(console.error);
         }
@@ -236,10 +237,5 @@ const Destroyer = new Suzutsuki(config.token, {
 });
 
 Destroyer.connect()
-    .then(() => 
-        server.listen(  
-            config.restport, 
-            (error, address) => error ? console.error(error) : console.log(`Rest server is listening at ${address}`)
-        )
-    )
+    .then(() => server.listen(config.restport, FasifyCallback.handle))
     .catch(console.error);
