@@ -53,6 +53,7 @@ class PatreonHandler {
                 'INSERT INTO patreons (id, status) VALUES (?, ?) ON DUPLICATE KEY UPDATE status = VALUE(status)',
                 [id, number]
             )*/
+            return 'Ok';
         } catch (error) {
             console.error(error);
             reply.code(500);
