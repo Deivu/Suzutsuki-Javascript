@@ -1,5 +1,6 @@
 const { Client } = require('eris');
 const { createPool } = require('mariadb');
+const { inspect } = require('util');
 const crypto = require('crypto');
 const server = require('fastify')();
 const config = require('./config.js');
@@ -23,7 +24,19 @@ class PatreonHandler {
                 'SELECT status FROM patreons WHERE id = ?',
                 [request.query.id]
             );
-            if (!query.length) return false;
+            if (!query.length) {
+                const guild = this.guilds.get(config.guildid);
+                if (!guild) {
+                    reply.code(500);
+                    return 'FleetGirls Guild not found.';
+                }
+                const member = await this.getRESTGuildMember(guild.id, request.query.id)
+                    .catch((error) => error.message === 'DiscordRESTError [10013]: Unknown User' ? null : error);
+                if (!member || !Array.isArray(member.roles)) return false;
+                let result = false;
+                if (member.roles.includes(config.boostersrole)) result = 'NitroBoosters';
+                return result;
+            }
             return query[0].status;
         } catch (error) {
             console.error(error);
@@ -43,7 +56,7 @@ class PatreonHandler {
                 return 'Signature Mismatch';
             }
             const json = JSON.parse(request.body);
-            console.log(json);
+            console.log(inspect(json, { depth: null }));
             /* Not implemented as patreon docs is unclear in this part
             console.log(JSON.stringify(data, null, 4));
             const rewards = json.included.slice(2, json.included.length);
