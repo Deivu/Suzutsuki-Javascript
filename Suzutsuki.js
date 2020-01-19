@@ -9,6 +9,12 @@ const randomStatus = ['Did you call, Admiral?', 'I\'ll protect you forever.', 'W
 const exitEvents = ['beforeExit', 'SIGINT', 'SIGINT'];
 const patreonRoles = ['Contributors', 'Benefactors', 'Specials', 'Heroes'];
 
+class PingPong {
+    static async pong() {
+        return `Pong! ${this.client.user.username} is online.`;
+    }
+}
+
 class PatreonHandler {
     static async check(request, reply) {
         try {
@@ -72,6 +78,32 @@ class PatreonHandler {
             reply.code(500);
             return error.toString();
         }
+    }
+
+    static async getPatreons(request, reply) {
+        try {
+            if (!request.headers.authorization || request.headers.authorization !== config.restpw) {
+                reply.code(401);
+                return 'Unauthorized';
+            }
+            const guild = this.guilds.get(config.guildid);
+            if (!guild) {
+                reply.code(500);
+                return 'FleetGirls Guild not found.';
+            }
+
+            const patreonMembers = guild.members.filter(member => member.roles.includes(config.patreonsrole));
+
+            return patreonMembers.map(member => PatreonHandler._parseMember(member));
+        } catch (error) {
+            console.error(error);
+            reply.code(500);
+            return error.toString();
+        }
+    }
+
+    static _parseMember({ id, username }) {
+        return { id, username };
     }
 }
 
@@ -201,13 +233,18 @@ class Suzutsuki extends Client {
     _init() {
         const PatreonCheck = PatreonHandler.check.bind(this);
         const PatreonTrigger = PatreonHandler.trigger.bind(this);
+        const GetPatreons = PatreonHandler.getPatreons.bind(this);
         const DonatorCheck = DonatorHandler.check.bind(this);
+        const PingPongTrigger = PingPong.pong.bind(this);
 
         server.addContentTypeParser('application/json', { parseAs: 'string' }, 
             (request, body, callback) => callback(null, body)
         );
+        
+        server.get('/', PingPongTrigger);
         server.get('/checkPatreonStatus', PatreonCheck);
         server.post('/trigger', PatreonTrigger);
+        server.get('/currentPatreons', GetPatreons);
         server.get('/checkDonatorStatus', DonatorCheck);
 
         this.once('ready', SuzutsukiEvents.ready);
