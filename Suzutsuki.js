@@ -11,7 +11,7 @@ const patreonRoles = ['Contributors', 'Benefactors', 'Specials', 'Heroes'];
 
 class PingPong {
     static async pong() {
-        return `Pong! ${this.client.user.username} is online.`;
+        return `Pong! ${this.user.username} is online.`;
     }
 }
 
