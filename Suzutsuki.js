@@ -92,9 +92,19 @@ class PatreonHandler {
                 return 'FleetGirls Guild not found.';
             }
 
+            const patreonTierRoles = Object.keys(config.patreontiers);
+
             const patreonMembers = guild.members.filter(member => member.roles.includes(config.patreonsrole));
 
-            return patreonMembers.map(member => PatreonHandler._parseMember(member));
+            const Heroes = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[0]));
+
+            const Specials = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[1]) && (!Heroes.length || Heroes.some(_ => _.id !== member.id)));
+
+            const Benefactors = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[2]) && (!Specials.length || Specials.some(_ => _.id !== member.id)));
+
+            const Contributors = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[3]) && (!Benefactors.length || Benefactors.some(_ => _.id !== member.id)));
+
+            return PatreonHandler._parseData({ Heroes, Specials, Benefactors, Contributors });
         } catch (error) {
             console.error(error);
             reply.code(500);
@@ -102,8 +112,17 @@ class PatreonHandler {
         }
     }
 
-    static _parseMember({ id, username }) {
-        return { id, username };
+    static _parseData({ Heroes, Specials, Benefactors, Contributors }) {
+        return {
+            Heroes: Heroes.map(member => PatreonHandler._parseMember(member)),
+            Specials: Specials.map(member => PatreonHandler._parseMember(member)),
+            Benefactors: Benefactors.map(member => PatreonHandler._parseMember(member)),
+            Contributors: Contributors.map(member => PatreonHandler._parseMember(member))
+        };
+    }
+
+    static _parseMember({ id, username, discriminator }) {
+        return { id, username, discriminator };
     }
 }
 
