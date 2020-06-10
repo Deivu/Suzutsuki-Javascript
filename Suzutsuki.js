@@ -1,24 +1,18 @@
-const { Client } = require('eris');
-const { createPool } = require('mariadb');
+const { Client, MessageEmbed }= require('discord.js');
 const { inspect } = require('util');
 const crypto = require('crypto');
 const server = require('fastify')();
+
 const config = require('./config.js');
+const patreonTierRoles = Object.keys(config.patreontiers);
 
-const randomStatus = ['Did you call, Admiral?', 'I\'ll protect you forever.', 'We\'ll be together forever.'];
+const randomStatus = ['Did you call, Admiral?', 'I\'ll protect you forever ❤', 'We\'ll be together forever ❤'];
 const exitEvents = ['beforeExit', 'SIGINT', 'SIGINT'];
-const patreonRoles = ['Contributors', 'Benefactors', 'Specials', 'Heroes'];
-
-class PingPong {
-    static async pong() {
-        return `Pong! ${this.user.username} is online.`;
-    }
-}
 
 class PatreonHandler {
     static async check(request, reply) {
         try {
-            if (Object.keys(request.query).length === 0 || !request.query.id) {
+            if (!Object.keys(request.query).length|| !request.query.id) {
                 reply.code(400);
                 return 'No Query String Found';
             }
@@ -26,24 +20,29 @@ class PatreonHandler {
                 reply.code(401);
                 return 'Unauthorized';
             }
-            const query = await this.pool.query(
-                'SELECT status FROM patreons WHERE id = ?',
-                [request.query.id]
-            );
-            if (!query.length) {
-                const guild = this.guilds.get(config.guildid);
-                if (!guild) {
-                    reply.code(500);
-                    return 'FleetGirls Guild not found.';
-                }
-                const member = await this.getRESTGuildMember(guild.id, request.query.id)
-                    .catch((error) => error.message === 'DiscordRESTError [10013]: Unknown User' ? null : error);
-                if (!member || !Array.isArray(member.roles)) return false;
-                let result = false;
-                if (member.roles.includes(config.boostersrole)) result = 'NitroBoosters';
-                return result;
+
+            const guild = this.guilds.cache.get(config.guildid);
+            if (!guild) {
+                reply.code(500);
+                return 'FleetGirls Guild not found.';
             }
-            return query[0].status;
+
+            const member = guild.members.cache.get(request.query.id);
+
+            if (!member) return false;
+
+            if (!member.roles.cache.has(config.patreonsrole)) {
+                if (!member.roles.cache.has(config.boostersrole)) return false;
+                return 'NitroBoosters';
+            }
+
+            const patreonTierRoles = Object.keys(config.patreontiers);
+            for (const id of patreonTierRoles) {
+                if (member.roles.cache.has(id)) return config.patreontiers[id];
+            }
+
+            reply.code(404);
+            return `User ${member.displayName} (${member.id}) has Patreon Role but doesn't have a tier`;
         } catch (error) {
             console.error(error);
             reply.code(500);
@@ -62,16 +61,7 @@ class PatreonHandler {
                 return 'Signature Mismatch';
             }
             const json = JSON.parse(request.body);
-            console.log(inspect(json, { depth: null }));
-            /* Not implemented as patreon docs is unclear in this part
-            console.log(JSON.stringify(data, null, 4));
-            const rewards = json.included.slice(2, json.included.length);
-            console.log(json.data.attributes)
-            console.log(rewards.find(x => x.attributes.amount_cents === json.data.attributes.amount_cents))
-            await this.pool.query(
-                'INSERT INTO patreons (id, status) VALUES (?, ?) ON DUPLICATE KEY UPDATE status = VALUE(status)',
-                [id, number]
-            )*/
+            console.log('[Patreon Debug]: ', inspect(json, { depth: null }));
             return 'Ok';
         } catch (error) {
             console.error(error);
@@ -86,23 +76,17 @@ class PatreonHandler {
                 reply.code(401);
                 return 'Unauthorized';
             }
-            const guild = this.guilds.get(config.guildid);
+            const guild = this.guilds.cache.get(config.guildid);
             if (!guild) {
                 reply.code(500);
                 return 'FleetGirls Guild not found.';
             }
 
-            const patreonTierRoles = Object.keys(config.patreontiers);
-
-            const patreonMembers = guild.members.filter(member => member.roles.includes(config.patreonsrole));
-
-            const Heroes = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[0]));
-
-            const Specials = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[1]) && (!Heroes.length || Heroes.some(_ => _.id !== member.id)));
-
-            const Benefactors = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[2]) && (!Specials.length || Specials.some(_ => _.id !== member.id)));
-
-            const Contributors = patreonMembers.filter(member => member.roles.includes(patreonTierRoles[3]) && (!Benefactors.length || Benefactors.some(_ => _.id !== member.id)));
+            const patreonMembers = guild.members.cache.filter(member => member.roles.cache.has(config.patreonsrole));
+            const Heroes = patreonMembers.filter(member => member.roles.cache.has(patreonTierRoles[0]));
+            const Specials = patreonMembers.filter(member => member.roles.cache.has(patreonTierRoles[1]) && (!Heroes.size || Heroes.some(mem => mem.id !== member.id)));
+            const Benefactors = patreonMembers.filter(member => member.roles.cache.has(patreonTierRoles[2]) && (!Specials.size|| Specials.some(mem => mem.id !== member.id)));
+            const Contributors = patreonMembers.filter(member => member.roles.cache.has(patreonTierRoles[3]) && (!Benefactors.size || Benefactors.some(mem => mem.id !== member.id)));
 
             return PatreonHandler._parseData({ Heroes, Specials, Benefactors, Contributors });
         } catch (error) {
@@ -114,10 +98,10 @@ class PatreonHandler {
 
     static _parseData({ Heroes, Specials, Benefactors, Contributors }) {
         return {
-            Heroes: Heroes.map(member => PatreonHandler._parseMember(member)),
-            Specials: Specials.map(member => PatreonHandler._parseMember(member)),
-            Benefactors: Benefactors.map(member => PatreonHandler._parseMember(member)),
-            Contributors: Contributors.map(member => PatreonHandler._parseMember(member))
+            Heroes: Heroes.map(member => PatreonHandler._parseMember(member.user)),
+            Specials: Specials.map(member => PatreonHandler._parseMember(member.user)),
+            Benefactors: Benefactors.map(member => PatreonHandler._parseMember(member.user)),
+            Contributors: Contributors.map(member => PatreonHandler._parseMember(member.user))
         };
     }
 
@@ -129,7 +113,7 @@ class PatreonHandler {
 class DonatorHandler {
     static async check(request, reply) {
         try {
-            if (Object.keys(request.query).length === 0 || !request.query.id) {
+            if (!Object.keys(request.query).length || !request.query.id) {
                 reply.code(400);
                 return 'No Query String Found';
             }
@@ -137,15 +121,15 @@ class DonatorHandler {
                 reply.code(401);
                 return 'Unauthorized';
             }
-            const guild = this.guilds.get(config.guildid);
+            const guild = this.guilds.cache.get(config.guildid);
             if (!guild) {
                 reply.code(500);
                 return 'FleetGirls Guild not found.';
             }
 
-            const member = await this.getRESTGuildMember(guild.id, request.query.id)
-                .catch((error) => error.message === 'DiscordRESTError [10013]: Unknown User' ? null : error);
-            return member && Array.isArray(member.roles) ? member.roles.includes(config.stonksdonatorid) : false;
+            const member = guild.members.cache.get(request.query.id);
+
+            return member && member.roles.cache.has(config.stonksdonatorid);
         } catch (error) {
             console.error(error);
             reply.code(500);
@@ -154,95 +138,84 @@ class DonatorHandler {
     }
 }
 
-class FasifyCallback {
-    static handle(error, address) {
-        error ? console.error(error) : console.log(`Rest server is listening at ${address}`);
-    }
-}
 
 class SuzutsukiEvents {
-    static ready() {
-        console.log(`${this.user.username} is now online !`);
-        this.editStatus({ name: 'Suzutsuki, heading out !' });
+    ready() {
+        console.log(`[${this.user.username}]: Now online!`);
+        this.user.setPresence({ activity: { name: 'Hello Admiral ❤' } })
+            .catch(console.error);
         let counter = 0;
         this.playingInterval = setInterval(() => {
-            this.editStatus({ name: randomStatus[counter] });
+            this.user.setPresence({ activity: { name: randomStatus[counter] } })
+                .catch(console.error);
             if (counter >= randomStatus.length - 1) counter = 0;
             else counter++;
         }, 120000);
-        this._readyFired = true;
     }
 
-    static shardReady() {
-        if (!this._readyFired) return;
-        this.editStatus({ name: 'Suzutsuki, re-identified to the gateway !' });
-    }
-
-    static error(error) {
-        console.error(error);
-    }
-
-    static shardDisconnect(error, id) {
+    shardError(error, id) {
         if (!error) return;
-        error.shardID = id;
-        SuzutsukiEvents.error(error);
+        console.error(`[Shard ${id}]: `, error);
     }
 
-    static shardResume(id) {
-        console.log(`Shard ${id} resumed it's session`);
+    ShardReconnecting(id) {
+        console.log(`[Shard ${id}]: `, 'Reconnecting');
     }
 
-    static guildMemberUpdate(guild, member, oldMember) {
-        if (guild.id !== config.guildid) return;
-        if (member.roles.length === oldMember.roles.length) return;
+    shardReady(id) {
+        console.log(`[Shard ${id}]: `, 'Ready');
+    }
 
-        let role;
-        let action;
-        if (oldMember.roles.length > member.roles.length) {
-            role = oldMember.roles.find((role) => !member.roles.includes(role));
-            action = 'removed';
-        } else {
-            role = member.roles.find((role) => !oldMember.roles.includes(role));
-            action = 'added';
+    shardResume(id, rep) {
+        console.log(`[Shard ${id}]: `, `Resumed => ${rep} events`);
+    }
+
+    guildMemberUpdate(oldMember, newMember) {
+        if (newMember.guild.id !== config.guildid || oldMember.roles.cache.size === newMember.roles.cache.size || oldMember.roles.cache.size > newMember.roles.cache.size) return;
+        const role = newMember.roles.cache.find((role) => !oldMember.roles.cache.has(role.id));
+        if (!role || !patreonTierRoles.includes(role.id)) return;
+        const channel = newMember.guild.channels.cache.get(config.annoucementchannelid);
+        if (!channel) return;
+        channel.send(`<a:too_hype:480054627820371977> ${newMember.toString()} became a Patreon! Thanks for the support \\❤`)
+            .catch(console.error);
+    }
+
+    message(msg) {
+        if (!msg.guild || msg.author.bot) return;
+        const args = msg.content.split(' ');
+        if (!args.length) return;
+        if (args[0] !== `<@!${this.user.id}>`) return;
+        args.shift();
+        const command = args.shift().toLowerCase();
+        let response;
+        if (command === 'ping') {
+            response = `Admiral, the current ping is \`${msg.guild.shard.ping}ms\``;
         }
-
-        if (!role || !action) return;
-
-        const roleObject = guild.roles.get(role);
-        if (!roleObject || !patreonRoles.includes(roleObject.name)) return;
-
-        if (action === 'removed') {
-            this.pool.query(
-                'DELETE FROM patreons WHERE id = ?', 
-                [member.id]
-            ).catch(console.error);
-        } else {
-            this.pool.query(
-                'INSERT INTO patreons (id, status) VALUES (?, ?) ON DUPLICATE KEY UPDATE status = ?',
-                [member.id, roleObject.name, roleObject.name]
-            ).then(() => {
-                const channel = guild.channels.get(config.annoucementchannelid);
-                channel.createMessage(`<a:too_hype:480054627820371977>** ${member.nick || member.username}** became a Patreon! Hooray! Thanks for the support ~`)
-                    .catch(console.error);
-            }).catch(console.error);
+        if (command === 'stats' ) {
+            const { rss, heapUsed } = process.memoryUsage();
+            response = new MessageEmbed()
+                .setColor('RANDOM')
+                .setAuthor('Current Status')
+                .setThumbnail(this.user.displayAvatarURL())
+                .setDescription('```ml\n' +
+                    `Guilds Stored  :: ${this.guilds.cache.size.toLocaleString()}\n` +
+                    `Users Seen     :: ${this.users.cache.size.toLocaleString()}\n` +
+                    `Memory Used    :: ${this.parseMemory(rss)}\n` +
+                    `Heap Used      :: ${this.parseMemory(heapUsed)}\n` +
+                    '```')
+                .setTimestamp()
+                .setFooter(this.user.username);
         }
+        if (!response) return;
+        msg.channel.send(response)
+            .catch(console.error);
     }
 }
 
 class Suzutsuki extends Client {
-    constructor(token, options) {
-        super(token, options);
-
-        this.pool = createPool({ 
-            host: config.dbhost, 
-            port: config.dbport,
-            user: config.dbuser, 
-            password: config.dbpw, 
-            database: config.dbname,
-            connectionLimit: 5 
-        });
-
-        this._readyFired = false;
+    constructor(options) {
+        super(options);
+        this.events = new SuzutsukiEvents();
 
         for (const event of exitEvents) process.once(event, this._safetyExit.bind(this));
 
@@ -250,62 +223,54 @@ class Suzutsuki extends Client {
     }
 
     _init() {
-        const PatreonCheck = PatreonHandler.check.bind(this);
-        const PatreonTrigger = PatreonHandler.trigger.bind(this);
-        const GetPatreons = PatreonHandler.getPatreons.bind(this);
-        const DonatorCheck = DonatorHandler.check.bind(this);
-        const PingPongTrigger = PingPong.pong.bind(this);
-
-        server.addContentTypeParser('application/json', { parseAs: 'string' }, 
+        server.addContentTypeParser('application/json', { parseAs: 'string' },
             (request, body, callback) => callback(null, body)
         );
-        
-        server.get('/', PingPongTrigger);
-        server.get('/checkPatreonStatus', PatreonCheck);
-        server.post('/trigger', PatreonTrigger);
-        server.get('/currentPatreons', GetPatreons);
-        server.get('/checkDonatorStatus', DonatorCheck);
+        server.get('/',
+            function (req, rep) {
+                rep.send('Hello World');
+            }
+        );
+        server.get('/checkPatreonStatus', PatreonHandler.check.bind(this));
+        server.post('/trigger', PatreonHandler.trigger.bind(this));
+        server.get('/currentPatreons', PatreonHandler.getPatreons.bind(this));
+        server.get('/checkDonatorStatus', DonatorHandler.check.bind(this));
 
-        this.once('ready', SuzutsukiEvents.ready);
-
-        this.on('error', SuzutsukiEvents.error);
-        this.on('shardDisconnect', SuzutsukiEvents.shardDisconnect);
-        this.on('shardResume', SuzutsukiEvents.shardResume);
-        this.on('shardReady', SuzutsukiEvents.shardReady);
-        this.on('guildMemberUpdate', SuzutsukiEvents.guildMemberUpdate);
-
-        this._createDB();
+        this.once('ready', this.events.ready);
+        this.on('error', console.error);
+        this.on('shardReady', this.events.shardReady);
+        this.on('shardError', this.events.shardError);
+        this.on('shardReconnecting', this.events.ShardReconnecting);
+        this.on('shardResume', this.events.shardResume);
+        this.on('guildMemberUpdate', this.events.guildMemberUpdate);
+        this.on('message', this.events.message);
     }
 
-    _createDB() {
-        this.pool.query('CREATE TABLE IF NOT EXISTS patreons(id VARCHAR(64) PRIMARY KEY, status text)')
-            .catch(console.error);
+    parseMemory(bytes) {
+        return bytes < 1024000000 ? `${Math.round(bytes / 1024 / 1024)} MB` : `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
     }
 
     _safetyExit() {
         clearInterval(this.playingInterval);
-        this.disconnect({ reconnect: false });
-        this.pool.end()
-            .catch(console.error)
-            .finally(process.exit);
+        this.destroy();
+        setTimeout(process.exit, 2500);
     }
 }
 
-const Destroyer = new Suzutsuki(config.token, { 
-    disableEvents: {
-        TYPING_START: true,
-        PRESENCE_UPDATE: true,
-        VOICE_STATE_UPDATE: true,
-        MESSAGE_CREATE: true,
-        MESSAGE_DELETE: true,
-        MESSAGE_DELETE_BULK: true,
-        MESSAGE_UPDATE: true
-    },
-    restMode: true, 
-    messageLimit: 0, 
-    getAllUsers: true 
+const Destroyer = new Suzutsuki({
+    messageCacheMaxSize	: 1,
+    messageCacheLifetime: 60,
+    messageSweepInterval: 120,
+    fetchAllMembers: true,
+    ws: {
+        intents: ['GUILDS', 'GUILD_MEMBERS', 'GUILD_BANS', 'GUILD_MESSAGES']
+    }
 });
 
-Destroyer.connect()
-    .then(() => server.listen(config.restport, FasifyCallback.handle))
+Destroyer.login(config.token)
+    .then(() =>
+        server.listen(config.restport,
+            (error, address) => error ? console.error(error) : console.log(`[REST Server]: Listening at ${address}`)
+        )
+    )
     .catch(console.error);
